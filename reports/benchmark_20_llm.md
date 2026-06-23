@@ -1,0 +1,884 @@
+# Flat RAG vs GraphRAG Benchmark
+
+This report compares a Flat RAG baseline with a 2-hop GraphRAG pipeline over 20 benchmark questions.
+Flat RAG uses ChromaDB when available over TF-IDF vectors; GraphRAG uses NetworkX over document/entity nodes.
+
+## Summary
+
+| # | Question | Flat keyword coverage | Graph keyword coverage | Note | LLM judge |
+|---|---|---:|---:|---|---|
+| 1 | Is US EV demand really slowing, and which evidence supports both the slowdown and growth narratives? | 3/6 | 5/6 | GraphRAG has stronger entity coverage. | Flat RAG: 2/5 - Thiếu bằng chứng về Q1 2024 EV sales slowed/fall quarter over quarter và thiếu dẫn chứng cụ thể từ ICCT/BNEF. Có nêu doanh số vượt 1 triệu và các yếu tố tăng trưởng.<br>GraphRAG: 2/5 - Tương tự Flat RAG, thiếu bằng chứng về Q1 2024 và dẫn chứng ICCT/BNEF. Có đề cập thị trường vượt 1 triệu chiếc năm 2023.<br>Better: Tie (cả hai đều thiếu bằng chứng then chốt)<br>Hallucination risk: Trung bình - Cả hai đều không tạo ra sự kiện sai nhưng bỏ sót bằng chứng quan trọng yêu cầu. |
+| 2 | How do charging infrastructure and consumer confidence affect EV adoption in the United States? | 2/6 | 4/6 | GraphRAG has stronger entity coverage. | Flat RAG: 0/5 - Không trả lời câu hỏi, chỉ nhắc lại câu hỏi bằng tiếng Việt.<br>GraphRAG: 1/5 - Trả lời rằng không có bằng chứng phù hợp, nhưng liệt kê được một số điểm chung (như lo ngại về phạm vi hoạt động) từ tài liệu.<br>Better: GraphRAG<br>Hallucination risk: Flat RAG có nguy cơ cao hơn do đưa ra câu trả lời không liên quan; GraphRAG trung thực hơn về giới hạn bằng chứng. |
+| 3 | What role do Tesla price cuts and market share changes play in US EV sentiment? | 4/6 | 3/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 1/5 - Vi phạm bằng chứng "lower prices did not automatically create higher volume" khi khẳng định "đóng góp vào sự gia tăng mạnh mẽ trong việc áp dụng EV".<br><br>GraphRAG: 4/5 - Phù hợp phần lớn bằng chứng (giá giảm, thị phần giảm nhưng vẫn dẫn đầu). Phần 3 về bối cảnh cổ phiếu và P/S là thừa nhưng không trực tiếp mâu thuẫn.<br><br>Better: GraphRAG<br>Hallucination risk: Flat RAG có nguy cơ cao hơn do tạo ra nguyên nhân-kết quả (giá thấp -> tăng trưởng mạnh) không được bằng chứng hỗ trợ. |
+| 4 | How do policy incentives and ZEV regulations relate to regional EV uptake? | 5/6 | 4/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 5/5 - Đáp ứng đầy đủ cả 3 bằng chứng mong đợi (ZEV regulation states, top metropolitan markets, California và các bang khác) với chi tiết số liệu và mối quan hệ rõ ràng.<br><br>GraphRAG: 3/5 - Thiếu thông tin cụ thể về California/ các bang vượt trội so với mức trung bình quốc gia và so sánh về số lượng mẫu xe. Có đề cập đến các bằng chứng về thị phần ZEV và khuyến khích đô thị nhưng không đầy đủ.<br><br>Better: Flat RAG<br><br>Hallucination risk: Cả hai không có thông tin không đúng, nhưng GraphRAG thiếu bằng chứng so sánh quan trọng. |
+| 5 | How does competition from China and hybrids change the outlook for US automakers and investors? | 3/6 | 5/6 | GraphRAG has stronger entity coverage. | Tôi sẽ đánh giá dựa trên phần expected evidence bạn cung cấp.<br><br>**Flat RAG: 1/5 -** Câu trả lời không có thông tin, mặc dù evidence có các nội dung về China, hybrid và investor.<br><br>**GraphRAG: 4/5 -** Cover đầy đủ cả 3 điểm trong evidence: lợi thế Trung Quốc, sự nổi lên của hybrid, và xu hướng investor tìm đến công ty có bảng cân đối mạnh và đa dạng động cơ.<br><br>**Better: GraphRAG**<br><br>**Hallucination risk:** GraphRAG có thể thêm thông tin bổ sung (Made in China 2025) không có trong evidence, nhưng không mâu thuẫn với bằng chứng đã cho. |
+| 6 | Why can Q1 2024 look weak while the US EV market still has a positive 2024 outlook? | 5/6 | 5/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 3/5 - Trả lời bao phủ hai phần nhưng chưa nối được rõ ràng lý do Q1 yếu với triển vọng cả năm tích cực.<br>GraphRAG: 1/5 - Sai khi tuyên bố bằng chứng không đủ; thực tế bằng chứng đủ nhưng câu trả lời không kết nối được mối quan hệ.<br>Better: Flat RAG<br>Hallucination risk: GraphRAG có nguy cơ cao hơn do tuyên bố sai về bằng chứng. |
+| 7 | Which automakers grew strongly in Q1 2024 despite Tesla's weaker US performance? | 6/6 | 3/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 2/5 - Ghi nhận Audi sai, thiếu nhiều hãng tăng trưởng và mô tả không đầy đủ  <br>GraphRAG: 2/5 - Sai Audi, thiếu hầu hết hãng tăng trưởng, không đề cập đến Ford ở vị trí thứ hai  <br>Better: Tie  <br>Hallucination risk: Cả hai đều có phần thông tin sai lệch và thiếu sót so với bằng chứng |
+| 8 | How are public and workplace chargers connected to high EV uptake in metro areas? | 6/6 | 5/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 4/5 – Cung cấp đủ ba ý bằng chứng chính, chỉ ra liên kết và số liệu cụ thể từ tài liệu, trả lời trực tiếp câu hỏi.<br><br>GraphRAG: 2/5 – Chỉ trả lời được một ý (số liệu trạm sạc công cộng). Thông tin về nồng độ hạ tầng trong MSAs không nằm trong expected evidence. Không đề cập được workplace chargers và mối liên kết rõ ràng.<br><br>Better: Flat RAG<br><br>Hallucination risk: GraphRAG có nguy cơ cao hơn, đưa vào bằng chứng không được yêu cầu. |
+| 9 | What explains the mixed US consumer sentiment toward EVs? | 1/6 | 1/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 1/5 - Đa phần sai lệch, dẫn chứng về giá xăng và bầu cử không có trong expected evidence.<br>GraphRAG: 0/5 - Thừa nhận thiếu bằng chứng nhưng không đề cập đến những yếu tố cụ thể đã có trong đề bài (lợi ích môi trường/tiết kiệm xăng, sự thiếu tự tin về sạc).<br>Better: Flat RAG / GraphRAG / Tie -> Tie (cả hai đều không đạt, nhưng Flat RAG có lỗi nghiêm trọng hơn).<br>Hallucination risk: Cao. Flat RAG thêm thông tin ngoài luồng, GraphRAG bỏ sót thông tin đã có. |
+| 10 | How could the Inflation Reduction Act and charging investments influence EV adoption by 2030? | 5/6 | 2/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 4/5 - Đúng 3/4 điểm evidence (thiếu khẳng định 2030 adoption depends on charger availability), trích dẫn tài liệu rõ.<br><br>GraphRAG: 4/5 - Bao phủ đủ 3 điểm evidence và kết nối tốt với mục tiêu 2030, không trích dẫn trực tiếp tài liệu.<br><br>Better: Tie<br><br>Hallucination risk: Cả hai đều an toàn, không có thông tin sai so với evidence. |
+| 11 | Why are hybrids receiving more attention during the EV slowdown? | 5/6 | 5/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 4/5 - Trả lời bao quát lý do EV chậm lại và HEV tăng tốc, nhưng thiếu đề cập đến payback period và hỗ trợ doanh thu/tái đầu tư.<br><br>GraphRAG: 4/5 - Tương tự, giải thích tốt động lực thị trường nhưng bỏ sót bằng chứng về thời gian hoàn vốn và vai trò của powertrains với thu nhập nhà sản xuất.<br><br>Better: Tie (GraphRAG có cấu trúc rõ hơn, nhưng cả hai đều thiếu bằng chứng tương tự)<br><br>Hallucination risk: Thấp. Cả hai đều không đưa ra thông tin sai lệch so bằng chứng, chỉ là thiếu một số điểm. |
+| 12 | How do Chinese EV makers affect the competitive outlook for US and global EV markets? | 5/6 | 4/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 4/5 – Bao phủ tốt các ý chính: lợi thế chi phí/chuỗi cung ứng, mở rộng ra nước ngoài, và phản ứng chính sách từ Mỹ/Châu Âu. Thiếu chi tiết về "tariffs" (thuế quan) cụ thể.<br><br>GraphRAG: 5/5 – Đầy đủ và chính xác, bao gồm cả ba điểm bằng chứng mong đợi, có đề cập đến xuất khẩu và phản ứng chính sách (bao gồm cả ý ngăn chặn) một cách rõ ràng.<br><br>Better: GraphRAG<br><br>Hallucination risk: Thấp – Cả hai câu trả lời đều bám sát bằng chứng, không thêm thông tin ngoại lai đáng kể. |
+| 13 | What business opportunities are created by growth in the US EV charging market? | 5/6 | 3/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 5/5 - Bao phủ đầy đủ bằng chứng mong đợi<br>GraphRAG: 4/5 - Thiếu đề cập đến dự báo tăng trưởng của PwC về điểm sạc và xe điện<br>Better: Flat RAG<br>Hallucination risk: Cả hai không có ảo giác từ bằng chứng. |
+| 14 | Which regions or states stand out in US charging infrastructure availability? | 1/6 | 1/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 0/5 – Không xác định được thông tin từ bằng chứng, trong khi bằng chứng cung cấp rõ ba tiểu bang và khu vực đô thị.<br><br>GraphRAG: 0/5 – Tương tự, bỏ qua hoàn toàn bằng chứng được cung cấp và đưa ra thông tin không liên quan.<br><br>Better: Tie – Cả hai đều không trả lời dựa trên bằng chứng.<br><br>Hallucination risk: Rất cao – Cả hai đều tự bổ sung kiến thức ngoài bằng chứng và trả lời sai lệch. |
+| 15 | How do environment and fuel savings motives interact with infrastructure concerns? | 3/6 | 3/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 2/5 – Trả lời về hai tương tác nhưng chỉ nhắc đến động cơ tiết kiệm nhiên liệu (fuel savings), không nhắc gì đến môi trường (environment), và không liên kết trực tiếp được với bằng chứng về “willingness to consider EVs”.<br><br>GraphRAG: 5/5 – Chỉ ra rõ ràng mối quan hệ tương tác: động cơ bị “overshadowed” bởi lo ngại hạ tầng, liên kết đầy đủ cả ba phần bằng chứng dự kiến (environment, fuel savings, infrastructure concern, willingness).<br><br>Better: GraphRAG<br>Hallucination risk: Flat RAG có nguy cơ cao hơn do tạo ra phân tích không được hỗ trợ trực tiếp bằng bằng chứng (ví dụ: tách biệt khu vực Nam, Đông Bắc, Trung Tây không có trong bằng chứng). GraphRAG tổng hợp và liên kết đúng trọng tâm bằng chứng. |
+| 16 | What does Ford and GM scaling back production targets imply about EV sentiment? | 3/6 | 5/6 | GraphRAG has stronger entity coverage. | Flat RAG: 5/5 - Khẳng định bằng chứng không đủ để trả lời, khớp chính xác với expected evidence.<br><br>GraphRAG: 3/5 - Trả lời không thể trả lời nhưng thêm thông tin trái ngược (ví dụ: đang thúc đẩy sản xuất), gây hiểu lầm về bối cảnh.<br><br>Better: Flat RAG<br>Hallucination risk: GraphRAG có nguy cơ ảo giác vì đưa ra thông tin thực tế không có trong bằng chứng cho trước. |
+| 17 | How do EV prices and incentives affect affordability in the US market? | 3/6 | 3/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 2/5 - Nhắc đến giảm giá và khuyến khích nhưng không nêu rõ Tesla hay chi tiêu tăng, và bỏ lỡ tín dụng thuế/leasing.<br>GraphRAG: 3/5 - Có đề cập cắt giảm giá (Tesla) và khuyến khích tăng, nhưng thiếu chi tiết về tín dụng thuế $7,500 và cách leasing cải thiện khả năng chi trả.<br>Better: GraphRAG<br>Hallucination risk: Cả hai đều thêm chi tiết không có trong bằng chứng (ví dụ: giá cụ thể 2022, thu nhập gia đình, chính phủ rút ưu đãi). |
+| 18 | How do ChargePoint, Tesla Supercharger, and Electrify America differ in US charging networks? | 6/6 | 6/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 4/5 - Đầy đủ thông tin và so sánh được, có số liệu hỗ trợ nhưng hơi dài dòng.<br>GraphRAG: 2/5 - Thiếu hoàn toàn thông tin về Electrify America, không thể đưa ra so sánh đầy đủ.<br>Better: Flat RAG<br>Hallucination risk: GraphRAG có nguy cơ cao hơn vì thiếu thông tin và không chỉ ra rõ ràng sự thiếu hụt này. |
+| 19 | How do pollution standards and policy signals affect EV investment decisions? | 5/6 | 2/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 4/5 - Cung cấp đủ ba ý then chốt trong evidence (tiêu chuẩn thúc đẩy đầu tư, làm suy yếu ảnh hưởng cầu, hỗ trợ mục tiêu sạch), nhưng thiếu cụm từ "give confidence" từ evidence.<br><br>GraphRAG: 5/5 - Bao phủ hoàn toàn và chính xác mọi điểm trong expected evidence, giải thích rõ ràng cách tiêu chuẩn tạo động lực và sự tự tin, việc làm suy yếu ảnh hưởng tới câu chuyện cầu, và cách EV phục vụ các mục tiêu sạch.<br><br>Better: GraphRAG<br><br>Hallucination risk: Flat RAG có nguy cơ thấp, GraphRAG không có nguy cơ (không thêm thông tin ngoài evidence). |
+| 20 | How does the US EV market compare with global EV market trends? | 5/6 | 5/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 2/5 - Đúng là không đủ bằng chứng để trả lời, nhưng có phần bỏ qua một số manh mối trong bằng chứng (ví dụ: Mỹ có tăng trưởng hỗn hợp, thị trường toàn cầu đang chậm lại).<br><br>GraphRAG: 3/5 - Trích dẫn chính xác xu hướng chung toàn cầu đang chậm lại và nhấn mạnh tính cạnh tranh, nhưng thiếu so sánh rõ ràng với thị trường Mỹ từ bằng chứng.<br><br>Better: GraphRAG<br><br>Hallucination risk: GraphRAG có nguy cơ nhẹ do thêm chi tiết về các hãng xe cụ thể không có trong bằng chứng cốt lõi (EV markets differ by region, China dominates). |
+
+Keyword coverage is a lightweight proxy, not a replacement for human grading.
+When LLM is disabled or unavailable, answers are extractive and therefore show retrieval quality rather than free-form LLM hallucination.
+
+## Details
+
+### Case 1: Is US EV demand really slowing, and which evidence supports both the slowdown and growth narratives?
+
+Expected evidence:
+- Q1 2024 EV sales slowed or fell quarter over quarter
+- 2023 US EV sales passed 1 million
+- ICCT or BNEF argue the slowdown narrative is exaggerated
+- growth rate and consumer/infrastructure concerns still matter
+
+Flat RAG sources:
+doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_33: Battery trends 2022: an industry view on the development of the ...<br>doc_40: Why are EV sales slowing? | Goldman Sachs<br>doc_36: U.S. electric vehicle sales soar into '24 - International Council on ...<br>doc_32: Electric Vehicles: Slow, then Fast
+
+Flat RAG answer:
+```text
+Thị trường EV tại Mỹ đang thể hiện những dấu hiệu trái ngược, và bằng chứng hỗ trợ cho cả hai luận điểm "chậm lại" và "tăng trưởng".
+
+**Bằng chứng hỗ trợ luận điểm nhu cầu chậm lại:**
+- Một số nhà sản xuất ô tô như Ford và General Motors đang giảm sản lượng trước mắt do nhu cầu chậm lại so với dự báo trước đó ([doc_36]).
+- Goldman Sachs chỉ ra ba yếu tố tiêu cực: giá xe cao, lo ngại về phạm vi hoạt động và thiếu trạm sạc nhanh, khiến kịch bản "bear case" với mức sụt giảm 2% về doanh số EV trong năm 2024 trở nên thực tế hơn ([doc_40]).
+- Doanh số của xe lai (HEV/PHEV) tại Mỹ đang tăng trưởng vượt doanh số EV trong vài tháng gần đây ([doc_40]).
+
+**Bằng chứng hỗ trợ luận điểm tăng trưởng vẫn mạnh:**
+- Nhu cầu mạnh mẽ từ Hyundai, Kia và Volvo tại Mỹ, không có dấu hiệu đơn hàng sụt giảm ([doc_30], [doc_36]).
+- Dữ liệu khảo sát cho thấy ý định mua EV đang tăng, với 30% người lái xe được cấp phép không cân nhắc xe xăng cho lần mua/cho thuê tiếp theo ([doc_36]).
+- Doanh số EV tại Mỹ đã vượt mốc 1 triệu chiếc trong năm 2023 ([doc_30]). Các nhà sản xuất vẫn cam kết với tương lai điện hóa và dự kiến bán nhiều EV hơn bao giờ hết ([doc_30], [doc_36]).
+- Tín dụng thuế mới từ Đạo luật Giảm lạm phát sẽ hỗ trợ tới 7,500 USD và nhiều mẫu EV mới sẽ ra mắt, giúp tăng khả năng chi trả ([doc_36]).
+
+Thị trường Mỹ được đánh giá là "khó dự báo" và "đa dạng, không thể đoán trước" với những tín hiệu hỗn hợp này ([doc_30]).
+```
+
+GraphRAG seed entities:
+United States, EV slowdown
+
+GraphRAG sources:
+doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_36: U.S. electric vehicle sales soar into '24 - International Council on ...<br>doc_40: Why are EV sales slowing? | Goldman Sachs<br>doc_9: Electric vehicle trends | Deloitte Insights<br>doc_32: Electric Vehicles: Slow, then Fast
+
+GraphRAG answer:
+```text
+Nhu bằng chứng hiện tại cho thấy, câu trả lời không đơn giản là có hoặc không về việc nhu cầu EV tại Mỹ đang chậm lại, mà tồn tại hai luồng thông tin trái chiều.
+
+**Bằng chứng ủng hộ quan điểm nhu cầu chậm lại:**
+- Một số nhà sản xuất ô tô (Ford và GM) đang giảm quy mô sản xuất trước mắt do nhu cầu chậm hơn so với dự báo trước đó (doc_36).
+- Goldman Sachs cho rằng kịch bản "gấu" về việc doanh số EV năm 2024 giảm so với năm trước đã trở nên thực tế hơn, do lo ngại về chi phí, phạm vi hoạt động và cơ sở hạ tầng trạm sạc (doc_40). Họ dự báo doanh số có thể giảm 2% trong kịch bản này.
+
+**Bằng chứng ủng hộ quan điểm nhu cầu vẫn tăng trưởng:**
+- Thị trường Mỹ đã vượt mốc 1 triệu xe bán ra trong năm 2023 (doc_30).
+- Các hãng như Hyundai, Kia và Volvo báo cáo nhu cầu mạnh mẽ tại Mỹ, không có dấu hiệu đơn hàng sụt giảm (doc_30, doc_36).
+- Dữ liệu khảo sát người tiêu dùng cho thấy ý định mua EV đang tăng lên (doc_36).
+- Kịch bản cơ sở của Goldman Sachs vẫn kỳ vọng doanh số EV tăng 21% năm 2024 (doc_40).
+- Các ưu đãi thuế mới và việc giảm chi phí sản xuất dự kiến sẽ cải thiện khả năng chi trả, với hàng chục mẫu xe mới ra mắt (doc_36).
+
+**Thiếu bằng chứng:** Các tài liệu được cung cấp không có dữ liệu bán hàng cụ thể theo quý hoặc tháng của năm 2024 tại Mỹ để xác nhận xu hướng rõ ràng.
+```
+
+LLM judge:
+```text
+Flat RAG: 2/5 - Thiếu bằng chứng về Q1 2024 EV sales slowed/fall quarter over quarter và thiếu dẫn chứng cụ thể từ ICCT/BNEF. Có nêu doanh số vượt 1 triệu và các yếu tố tăng trưởng.
+GraphRAG: 2/5 - Tương tự Flat RAG, thiếu bằng chứng về Q1 2024 và dẫn chứng ICCT/BNEF. Có đề cập thị trường vượt 1 triệu chiếc năm 2023.
+Better: Tie (cả hai đều thiếu bằng chứng then chốt)
+Hallucination risk: Trung bình - Cả hai đều không tạo ra sự kiện sai nhưng bỏ sót bằng chứng quan trọng yêu cầu.
+```
+### Case 2: How do charging infrastructure and consumer confidence affect EV adoption in the United States?
+
+Expected evidence:
+- Charging availability and range anxiety are adoption barriers
+- Pew reports limited confidence in future charging infrastructure
+- large charger investments and 2030 targets are linked to adoption
+
+Flat RAG sources:
+doc_9: Electric vehicle trends | Deloitte Insights<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_70: Exploring consumer sentiment on electric-vehicle charging
+
+Flat RAG answer:
+```text
+Cơ sở hạ tầng sạc và sự tự tin của người tiêu dùng ảnh hưởng đến việc áp dụng xe điện ở Hoa Kỳ như thế nào?
+```
+
+GraphRAG seed entities:
+United States, EV sales, charging infrastructure, consumer sentiment
+
+GraphRAG sources:
+doc_9: Electric vehicle trends | Deloitte Insights<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_48: US electric vehicle charging market growth: PwC<br>doc_54: When does reinventing the wheel make perfect sense? | EY - Global<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...
+
+GraphRAG answer:
+```text
+The supplied evidence does not contain specific information about how charging infrastructure and consumer confidence affect EV adoption in the United States.
+
+The evidence discusses:
+1. The importance of charging infrastructure in general, using examples from Germany, China, and the EU.
+2. U.S. federal tax credits for EV buyers.
+3. Utilities in the U.S. (like PSE&G in New Jersey) offering credits for charging station installation.
+4. A general statement that more convenient charging solutions could reduce "range anxiety" and that charging is a top consumer concern.
+5. The fact that 38% of all U.S. EV sales in 2020 were in California, indicating a polarized adoption.
+
+**Missing evidence:** There is no direct analysis or data within the provided documents that specifically links the state of U.S. charging infrastructure or levels of U.S. consumer confidence to rates of EV adoption in the United States. The documents lack a focused examination of the U.S. context for these two factors.
+```
+
+LLM judge:
+```text
+Flat RAG: 0/5 - Không trả lời câu hỏi, chỉ nhắc lại câu hỏi bằng tiếng Việt.
+GraphRAG: 1/5 - Trả lời rằng không có bằng chứng phù hợp, nhưng liệt kê được một số điểm chung (như lo ngại về phạm vi hoạt động) từ tài liệu.
+Better: GraphRAG
+Hallucination risk: Flat RAG có nguy cơ cao hơn do đưa ra câu trả lời không liên quan; GraphRAG trung thực hơn về giới hạn bằng chứng.
+```
+### Case 3: What role do Tesla price cuts and market share changes play in US EV sentiment?
+
+Expected evidence:
+- Tesla cut prices and average transaction prices fell
+- Tesla market share declined even while it remained the leader
+- lower prices did not automatically create higher volume in Q1 2024
+
+Flat RAG sources:
+doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_26: Charging Forward: Exploring Opportunities in Electric Vehicle ...
+
+Flat RAG answer:
+```text
+Các đợt giảm giá mạnh mẽ của Tesla đã kích hoạt một cuộc chiến giá trong ngành, khiến giá EV trung bình giảm xuống gần mức giá xe động cơ đốt trong. Điều này giúp xe điện trở nên dễ tiếp cận hơn với người tiêu dùng, đóng góp vào sự gia tăng mạnh mẽ trong việc áp dụng EV. Mặc dù thị phần của Tesla tại Mỹ đã giảm (từ 65% năm 2022 xuống 55% năm 2023 và dưới 50% trong quý 2/2024), các đợt giảm giá này đã giúp công ty duy trì vị trí dẫn đầu thị trường.
+```
+
+GraphRAG seed entities:
+United States, Tesla, EV sales, EV prices
+
+GraphRAG sources:
+doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_26: Charging Forward: Exploring Opportunities in Electric Vehicle ...<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?
+
+GraphRAG answer:
+```text
+Từ bằng chứng được cung cấp, việc Tesla cắt giảm giá và những thay đổi thị phần của họ đóng một vai trò quan trọng trong việc định hình tâm lý thị trường EV tại Mỹ:
+
+1.  **Giảm giá mạnh của Tesla đã kích hoạt một cuộc chiến giá toàn ngành**, làm giảm đáng kể giá giao dịch trung bình của xe điện. Đến cuối năm 2023, giá xe Tesla gần như ngang bằng với giá xe động cơ đốt trong (ICE). Điều này giúp thu hẹp khoảng cách giá giữa EV và ICE, có khả năng làm tăng khả năng tiếp cận và kích thích tâm lý mua hàng.
+
+2.  **Thị phần của Tesla tại Mỹ đang giảm** (xuống dưới 50% lần đầu tiên vào Q2/2024) khi thị trường EV mở rộng và có thêm nhiều đối thủ cạnh tranh. Mặc dù vậy, Tesla vẫn là nhà dẫn đầu thị trường với khoảng cách lớn. Sự thống trị này, cùng với chiến lược tích hợp dọc và chuyên môn phần mềm, tiếp tục ảnh hưởng đến động lực cạnh tranh và nhận thức về khả năng dẫn đầu của họ.
+
+3.  **Các hành động chiến lược này xảy ra trong bối cảnh tâm lý chung về cổ phiếu EV đang yếu kém**. Giá cổ phiếu Tesla (tỷ lệ P/S) đã giảm, và vị thế đầu tư vào ngành này ở mức thấp. Bất kỳ dấu hiệu cải thiện nào về doanh số EV đều có thể nhanh chóng thay đổi tâm lý thị trường.
+
+Tóm lại, việc cắt giảm giá của Tesla hoạt động như một chất xúc tác hạ giá toàn ngành, tác động tích cực đến khả năng chi trả và tâm lý người tiêu dùng. Trong khi đó, việc thị phần của họ bị thu hẹp phản ánh sự cạnh tranh ngày càng gay gắt, nhưng vị thế dẫn đầu vững chắc vẫn là yếu tố trung tâm trong cấu trúc và nhận thức về thị trường EV Mỹ.
+```
+
+LLM judge:
+```text
+Flat RAG: 1/5 - Vi phạm bằng chứng "lower prices did not automatically create higher volume" khi khẳng định "đóng góp vào sự gia tăng mạnh mẽ trong việc áp dụng EV".
+
+GraphRAG: 4/5 - Phù hợp phần lớn bằng chứng (giá giảm, thị phần giảm nhưng vẫn dẫn đầu). Phần 3 về bối cảnh cổ phiếu và P/S là thừa nhưng không trực tiếp mâu thuẫn.
+
+Better: GraphRAG
+Hallucination risk: Flat RAG có nguy cơ cao hơn do tạo ra nguyên nhân-kết quả (giá thấp -> tăng trưởng mạnh) không được bằng chứng hỗ trợ.
+```
+### Case 4: How do policy incentives and ZEV regulations relate to regional EV uptake?
+
+Expected evidence:
+- ZEV regulation states had higher EV shares and more models
+- top metropolitan markets had many promotion actions and consumer incentives
+- California and other states outperformed national averages
+
+Flat RAG sources:
+doc_1: Evaluating electric vehicle market growth across U.S. cities ...<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_35: Three big reasons Americans haven't rapidly adopted EVs
+
+Flat RAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, chính sách khuyến khích và quy định ZEV có mối quan hệ chặt chẽ với việc tiếp nhận xe điện (EV) ở cấp độ khu vực. Cụ thể:
+
+1.  **Quy định ZEV** ở cấp tiểu bang (Hoa Kỳ) là yếu tố quan trọng cho sự tăng trưởng thị trường, liên quan trực tiếp đến tỷ lệ thị phần EV cao hơn. Các bang có quy định ZEV có tỷ lệ xe điện mới trung bình là 5% và thường có ít nhất hơn 13 mẫu xe điện so với các bang không có quy định này (chỉ đạt 1,3%).
+2.  **Khuyến khích chính sách** ở nhiều cấp (tiểu bang, thành phố, công ty tiện ích) có mối tương quan mạnh mẽ với việc tiếp nhận EV cao ở cấp độ vùng đô thị. Các khu vực đô thị có mức tiếp nhận EV cao nhất có số lượng hành động khuyến khích nhiều gấp đôi so với các khu vực có mức tiếp nhận thấp nhất.
+3.  **Khuyến khích cho người tiêu dùng** (ưu đãi mua xe, truy cập làn đường ưu tiên, giảm phí đỗ xe, v.v.) với giá trị từ $1,500 đến hơn $5,500 là yếu tố quan trọng cho sự phát triển thị trường và có mặt ở các khu vực đô thị có tỷ lệ tiếp nhận EV cao nhất.
+
+Tóm lại, bằng chứng từ tài liệu chỉ ra rằng các khu vực có sự kết hợp mạnh mẽ giữa **quy định bắt buộc (ZEV)** và **khuyến khích chính sách đa dạng, giá trị cao** thường đạt được mức độ tiếp nhận xe điện cao hơn đáng kể.
+```
+
+GraphRAG seed entities:
+EV sales, policy, ZEV regulations, consumer incentives
+
+GraphRAG sources:
+doc_1: Evaluating electric vehicle market growth across U.S. cities ...<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_28: Electric vehicle trends | Deloitte Insights<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?
+
+GraphRAG answer:
+```text
+Các khu vực có quy định ZEV chiếm khoảng 2/3 tổng doanh số xe điện của Mỹ vào năm 2020. Các vùng đô thị có tỷ lệ sử dụng xe điện cao nhất thường có nhiều chính sách khuyến khích cấp bang, thành phố và tiện ích, với mức khuyến khích tài chính cho người tiêu dùng từ $1,500 đến hơn $5,500, bao gồm ưu đãi mua xe, quyền sử dụng làn đường ưu tiên, giảm phí cầu đường và miễn phí đỗ xe. Khi các khuyến khích này bị cắt giảm, doanh số xe điện có thể dao động mạnh. Thiếu bằng chứng về mối quan hệ định lượng cụ thể giữa các khuyến khích chính sách và quy định ZEV đối với từng vùng.
+```
+
+LLM judge:
+```text
+Flat RAG: 5/5 - Đáp ứng đầy đủ cả 3 bằng chứng mong đợi (ZEV regulation states, top metropolitan markets, California và các bang khác) với chi tiết số liệu và mối quan hệ rõ ràng.
+
+GraphRAG: 3/5 - Thiếu thông tin cụ thể về California/ các bang vượt trội so với mức trung bình quốc gia và so sánh về số lượng mẫu xe. Có đề cập đến các bằng chứng về thị phần ZEV và khuyến khích đô thị nhưng không đầy đủ.
+
+Better: Flat RAG
+
+Hallucination risk: Cả hai không có thông tin không đúng, nhưng GraphRAG thiếu bằng chứng so sánh quan trọng.
+```
+### Case 5: How does competition from China and hybrids change the outlook for US automakers and investors?
+
+Expected evidence:
+- China has cost and supply-chain advantages in EVs and batteries
+- hybrids are gaining attention during the EV slowdown
+- investors may prefer automakers with strong balance sheets and multiple powertrains
+
+Flat RAG sources:
+doc_42: US-China Relations in the Biden-Era: A Timeline - China Briefing ...<br>doc_57: Global growth, inflation and China on Bloomberg TV | Virginie ...
+
+Flat RAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, không có thông tin nào nói về cạnh tranh từ Trung Quốc hay xe hybrid, và cũng không có thông tin nào về triển vọng đối với các nhà sản xuất ô tô Mỹ và nhà đầu tư. Bằng chứng thiếu hoàn toàn nội dung liên quan trực tiếp đến ngành công nghiệp ô tô, cạnh tranh thương mại trong lĩnh vực này, hoặc tác động đến thị trường đầu tư.
+```
+
+GraphRAG seed entities:
+United States, China, investor sentiment, hybrids, automakers
+
+GraphRAG sources:
+doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?<br>doc_40: Why are EV sales slowing? | Goldman Sachs<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023
+
+GraphRAG answer:
+```text
+Cuộc cạnh tranh từ các nhà sản xuất xe điện (EV) Trung Quốc và sự nổi lên của xe hybrid (HEV/PHEV) đang làm thay đổi triển vọng của các hãng xe Mỹ và nhà đầu tư. Trung Quốc, với lợi thế về chi phí và sự hỗ trợ mạnh mẽ của chính phủ (ví dụ chiến lược "Made in China 2025"), đang tạo ra sự cạnh tranh gay gắt, đặc biệt trong thị trường EV toàn cầu. Trong khi đó, xu hướng tăng trưởng chậm lại của doanh số EV và sự cạnh tranh hiệu quả hơn từ xe hybrid khiến môi trường kinh doanh trở nên khó khăn hơn. Các nhà đầu tư có thể tìm kiếm cơ hội ở những hãng xe có bảng cân đối kế toán mạnh và danh mục sản phẩm đa dạng nhiều loại động cơ.
+```
+
+LLM judge:
+```text
+Tôi sẽ đánh giá dựa trên phần expected evidence bạn cung cấp.
+
+**Flat RAG: 1/5 -** Câu trả lời không có thông tin, mặc dù evidence có các nội dung về China, hybrid và investor.
+
+**GraphRAG: 4/5 -** Cover đầy đủ cả 3 điểm trong evidence: lợi thế Trung Quốc, sự nổi lên của hybrid, và xu hướng investor tìm đến công ty có bảng cân đối mạnh và đa dạng động cơ.
+
+**Better: GraphRAG**
+
+**Hallucination risk:** GraphRAG có thể thêm thông tin bổ sung (Made in China 2025) không có trong evidence, nhưng không mâu thuẫn với bằng chứng đã cho.
+```
+### Case 6: Why can Q1 2024 look weak while the US EV market still has a positive 2024 outlook?
+
+Expected evidence:
+- Q1 2024 sales fell quarter over quarter
+- Cox Automotive still forecast full-year EV growth
+- more products, incentives, leasing, inventory, and infrastructure can support sales
+
+Flat RAG sources:
+doc_21: U.S. Automobile Dealer Sentiment Index: As Market Uncertainty ...<br>doc_37: 2024 Economic Trends Impacting the Auto Industry - Agency ...<br>doc_2: EV Sales Growth Slows; Market Leader Tesla Stalls - Cox ...<br>doc_5: Electric Vehicles: Slow, then Fast
+
+Flat RAG answer:
+```text
+Dựa trên bằng chứng được cung cấp:
+
+Q1 2024 có thể trông yếu vì tốc độ tăng trưởng doanh số xe điện (EV) tại Mỹ đang chậm lại, giá trung bình giảm và chi tiêu khuyến mãi tăng, đây là những dấu hiệu của nhu cầu chậm lại (doc_2). Đồng thời, chỉ số cảm nhận của đại lý ô tô cho thấy triển vọng thị trường nói chung đang suy yếu từ Q1 sang Q2 2024, bị ảnh hưởng bởi mùa hoàn thuế yếu hơn bình thường và sự không chắc chắn về kinh tế-chính trị (doc_21, doc_47).
+
+Tuy nhiên, triển vọng thị trường EV năm 2024 vẫn tích cực vì ngành công nghiệp ô tô nói chung đã ổn định thành một xu hướng tích cực trong năm 2024, với thị trường lao động mạnh, nhu cầu dồn nén và kỳ vọng lãi suất giảm trong tương lai (doc_37). Một điểm sáng trong Q1 là doanh số EV mạnh mẽ từ các hãng xe sang, cho thấy thị trường vẫn tiếp tục hướng tới phân khúc này (doc_2).
+```
+
+GraphRAG seed entities:
+United States
+
+GraphRAG sources:
+doc_21: U.S. Automobile Dealer Sentiment Index: As Market Uncertainty ...<br>doc_2: EV Sales Growth Slows; Market Leader Tesla Stalls - Cox ...<br>doc_37: 2024 Economic Trends Impacting the Auto Industry - Agency ...<br>doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...
+
+GraphRAG answer:
+```text
+The evidence provided is insufficient to answer the question directly. The documents do not explicitly reconcile the weak appearance of Q1 2024 with the positive overall 2024 outlook for the US EV market. Specifically, there is no evidence connecting short-term quarterly factors (like price cuts, leasing trends, or dealer sentiment) to the underlying positive long-term trends for the year (like strong labor market, pent-up demand, or expected interest rate declines).
+```
+
+LLM judge:
+```text
+Flat RAG: 3/5 - Trả lời bao phủ hai phần nhưng chưa nối được rõ ràng lý do Q1 yếu với triển vọng cả năm tích cực.
+GraphRAG: 1/5 - Sai khi tuyên bố bằng chứng không đủ; thực tế bằng chứng đủ nhưng câu trả lời không kết nối được mối quan hệ.
+Better: Flat RAG
+Hallucination risk: GraphRAG có nguy cơ cao hơn do tuyên bố sai về bằng chứng.
+```
+### Case 7: Which automakers grew strongly in Q1 2024 despite Tesla's weaker US performance?
+
+Expected evidence:
+- Tesla sales and market share declined
+- BMW, Cadillac, Ford, Hyundai, Kia, Lexus, Mercedes, Rivian, and VinFast had high growth
+- Ford had the second-highest EV sales volume behind Tesla
+
+Flat RAG sources:
+doc_2: EV Sales Growth Slows; Market Leader Tesla Stalls - Cox ...<br>doc_61: What Are Tesla's (TSLA) Main Competitors?
+
+Flat RAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, các nhà sản xuất ô tô tăng trưởng mạnh về doanh số xe điện (EV) trong Q1 2024 là Cadillac (tăng 499.2%), BMW (tăng 62.6%) và Audi (tăng 28.8%). Bằng chứng không đủ để xác nhận trực tiếp điều này xảy ra "bất chấp hiệu suất yếu hơn của Tesla tại Mỹ", nhưng tài liệu cho thấy doanh số EV tổng thể tăng trưởng chậm và Tesla bị tụt hậu trong khi các nhà sản xuất xa xỉ này lại có mức tăng trưởng mạnh.
+```
+
+GraphRAG seed entities:
+United States, Tesla, automakers
+
+GraphRAG sources:
+doc_2: EV Sales Growth Slows; Market Leader Tesla Stalls - Cox ...<br>doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_63: How did China come to dominate the world of electric cars? | MIT ...
+
+GraphRAG answer:
+```text
+Dựa trên bằng chứng được cung cấp:
+Các nhà sản xuất ô tô sang trọng Cadillac, BMW và Audi đã có mức tăng trưởng mạnh về doanh số xe điện (EV) trong quý 1 năm 2024, bất chấp hiệu suất yếu hơn của Tesla tại Mỹ. Cụ thể:
+- Cadillac đạt mức tăng 499.2% so với cùng kỳ năm trước.
+- BMW tăng 62.6%.
+- Audi tăng 28.8%.
+
+Bằng chứng không cung cấp thông tin về mức tăng trưởng của các nhà sản xuất ô tô không sang trọng hoặc các hãng xe Trung Quốc trong bối cảnh này.
+```
+
+LLM judge:
+```text
+Flat RAG: 2/5 - Ghi nhận Audi sai, thiếu nhiều hãng tăng trưởng và mô tả không đầy đủ  
+GraphRAG: 2/5 - Sai Audi, thiếu hầu hết hãng tăng trưởng, không đề cập đến Ford ở vị trí thứ hai  
+Better: Tie  
+Hallucination risk: Cả hai đều có phần thông tin sai lệch và thiếu sót so với bằng chứng
+```
+### Case 8: How are public and workplace chargers connected to high EV uptake in metro areas?
+
+Expected evidence:
+- top uptake metros averaged much higher public chargers per million people
+- top uptake metros also had more workplace chargers
+- charging availability is linked to EV growth
+
+Flat RAG sources:
+doc_1: Evaluating electric vehicle market growth across U.S. cities ...<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_48: US electric vehicle charging market growth: PwC<br>doc_18: Electric vehicles - IEA
+
+Flat RAG answer:
+```text
+Từ bằng chứng được cung cấp, sự kết nối giữa trạm sạc công cộng/nơi làm việc với việc áp dụng EV cao ở các khu vực đô thị được nêu rõ trong [doc_1]:
+
+1.  **Mối liên hệ trực tiếp**: "Electric vehicle growth is linked to greater availability of public and workplace charging."
+2.  **Số liệu so sánh**: Trong số 200 khu vực đô thị đông dân nhất, 10 khu vực có tỷ lệ áp dụng EV cao nhất có trung bình **935 trạm sạc công cộng** và **430 trạm sạc tại nơi làm việc** trên mỗi triệu dân.
+3.  **Chênh lệch**: Ngược lại, một nửa dân số Mỹ sống trong khu vực chỉ có khoảng 20% số lượng trạm sạc công cộng và dưới 10% số lượng trạm sạc tại nơi làm việc so với mức trung bình của 10 khu vực dẫn đầu.
+```
+
+GraphRAG seed entities:
+EV sales
+
+GraphRAG sources:
+doc_1: Evaluating electric vehicle market growth across U.S. cities ...<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_18: Electric vehicles - IEA<br>doc_48: US electric vehicle charging market growth: PwC<br>doc_70: Exploring consumer sentiment on electric-vehicle charging
+
+GraphRAG answer:
+```text
+Theo bằng chứng được cung cấp, việc phổ biến trạm sạc công cộng và tại nơi làm việc có liên quan mật thiết đến tỷ lệ sử dụng xe điện (EV) cao ở các khu vực đô thị.
+
+Cụ thể, phân tích 200 khu vực đô thị đông dân nhất ở Mỹ cho thấy mười khu vực có tỷ lệ sử dụng EV cao nhất (trung bình 10% thị phần xe điện) cũng có số lượng trạm sạc công cộng trung bình là 935 trạm trên một triệu dân (doc_1). Ngoài ra, phần lớn cơ sở hạ tầng sạc (khoảng 85-89% trạm sạc cấp độ 2 và 3) tập trung trong các Khu vực Thống kê Đô thị (MSAs) – những nơi có mật độ dân số cao (doc_30). Sự hiện diện của các trạm sạc này là cần thiết để cung cấp mức độ tiện lợi và khả năng tiếp cận tương đương với việc đổ xăng cho xe thông thường, từ đó khuyến khích người tiêu dùng chuyển sang sử dụng EV (doc_18).
+
+**Bằng chứng còn thiếu:** Các tài liệu không cung cấp chi tiết về mối quan hệ nhân quả trực tiếp (ví dụ: nghiên cứu định lượng chứng minh việc lắp đặt trạm sạc mới dẫn đến gia tăng ngay lập tức về doanh số EV trong một khu đô thị cụ thể). Các thách thức về chi phí đầu tư ban đầu và tính khả thi về mặt tài chính đối với trạm sạc tại nơi làm việc hoặc điểm đến cũng được đề cập nhưng chưa được phân tích sâu về tác động của chúng đến tốc độ tăng trưởng (doc_48).
+```
+
+LLM judge:
+```text
+Flat RAG: 4/5 – Cung cấp đủ ba ý bằng chứng chính, chỉ ra liên kết và số liệu cụ thể từ tài liệu, trả lời trực tiếp câu hỏi.
+
+GraphRAG: 2/5 – Chỉ trả lời được một ý (số liệu trạm sạc công cộng). Thông tin về nồng độ hạ tầng trong MSAs không nằm trong expected evidence. Không đề cập được workplace chargers và mối liên kết rõ ràng.
+
+Better: Flat RAG
+
+Hallucination risk: GraphRAG có nguy cơ cao hơn, đưa vào bằng chứng không được yêu cầu.
+```
+### Case 9: What explains the mixed US consumer sentiment toward EVs?
+
+Expected evidence:
+- Pew reports interest in EVs but also many people not likely to consider one
+- charging confidence is limited
+- environment and gas savings are major reasons for interested buyers
+
+Flat RAG sources:
+doc_62: The EV Transition Makes the U.S. Economy More Resilient - Frank ...<br>doc_21: U.S. Automobile Dealer Sentiment Index: As Market Uncertainty ...<br>doc_9: Electric vehicle trends | Deloitte Insights
+
+Flat RAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, tâm lý hỗn hợp của người tiêu dùng Mỹ đối với xe điện có thể được giải thích bởi hai yếu tố chính:
+1.  Tâm lý tiêu dùng nói chung bị ảnh hưởng mạnh mẽ bởi giá xăng tăng và sự bất ổn định (mặc dù chủ sở hữu xe điện có chi phí nhiên liệu thấp hơn và ổn định hơn).
+2.  Sự không chắc chắn của thị trường, đặc biệt là về lãi suất và mùa bầu cử, tác động tiêu cực đến tâm lý tiêu dùng và doanh số bán hàng trong ngành ô tô.
+
+Bằng chứng thiếu thông tin về các yếu tố cụ thể khác ảnh hưởng đến thái độ đối với xe điện, như chi phí mua xe ban đầu, phạm vi hoạt động, lo ngại về pin, hoặc tình trạng của cơ sở hạ tầng sạc.
+```
+
+GraphRAG seed entities:
+United States, consumer sentiment
+
+GraphRAG sources:
+doc_62: The EV Transition Makes the U.S. Economy More Resilient - Frank ...<br>doc_28: Electric vehicle trends | Deloitte Insights<br>doc_21: U.S. Automobile Dealer Sentiment Index: As Market Uncertainty ...<br>doc_24: EV is the New Dot Com<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...
+
+GraphRAG answer:
+```text
+Cung cấp bằng chứng không đủ để giải thích đầy đủ tâm lý người tiêu dùng Mỹ đối với xe điện (EVs). Thiếu bằng chứng về các lý do cụ thể cho tâm lý hỗn hợp, chẳng hạn như lo ngại về phạm vi hoạt động, giá cả, việc thiếu cơ sở hạ tầng sạc, hoặc dữ liệu khảo sát trực tiếp về sự do dự của người tiêu dùng. Các tài liệu hiện có chủ yếu tập trung vào lợi ích kinh tế, xu hướng thị trường dài hạn và tác động chính sách.
+```
+
+LLM judge:
+```text
+Flat RAG: 1/5 - Đa phần sai lệch, dẫn chứng về giá xăng và bầu cử không có trong expected evidence.
+GraphRAG: 0/5 - Thừa nhận thiếu bằng chứng nhưng không đề cập đến những yếu tố cụ thể đã có trong đề bài (lợi ích môi trường/tiết kiệm xăng, sự thiếu tự tin về sạc).
+Better: Flat RAG / GraphRAG / Tie -> Tie (cả hai đều không đạt, nhưng Flat RAG có lỗi nghiêm trọng hơn).
+Hallucination risk: Cao. Flat RAG thêm thông tin ngoài luồng, GraphRAG bỏ sót thông tin đã có.
+```
+### Case 10: How could the Inflation Reduction Act and charging investments influence EV adoption by 2030?
+
+Expected evidence:
+- IRA tax credits can reduce EV purchase costs
+- charging infrastructure investments are expected to expand public chargers
+- 2030 adoption depends partly on charger availability
+
+Flat RAG sources:
+doc_6: U.S. Electric Vehicle Investments Have Grown to $188 Billion ...<br>doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023
+
+Flat RAG answer:
+```text
+The Inflation Reduction Act (IRA) và các khoản đầu tư vào trạm sạc có thể tác động đến việc áp dụng xe điện (EV) vào năm 2030 theo những cách sau:
+
+1.  **Kích thích đầu tư sản xuất:** Sau khi IRA được thông qua, các nhà sản xuất đã công bố tổng cộng 188 tỷ USD đầu tư vào sản xuất xe điện và pin EV tại Mỹ, tạo ra 195.000 việc làm liên quan trực tiếp. (doc_6)
+2.  **Hỗ trợ tài chính trực tiếp:** IRA giới thiệu tín dụng thuế lên tới 7.500 USD cho việc mua xe điện mới và 4.000 USD cho xe điện đã qua sử dụng, giúp giải quyết lo ngại về khả năng chi trả. (doc_30, doc_66)
+3.  **Mở rộng cơ sở hạ tầng sạc:** Các khoản đầu tư hơn 21 tỷ USD vào cơ sở hạ tầng sạc dự kiến sẽ mở rộng mạng lưới trạm sạc công cộng từ khoảng 160.000 (năm 2023) lên gần 1 triệu vào năm 2030, giải quyết lo ngại về phạm vi hoạt động. (doc_30)
+4.  **Thúc đẩy tăng trưởng thị trường:** Với các biện pháp hỗ trợ này, thị trường Mỹ dự kiến đạt gần 1,9 triệu xe bán ra (chiếm 13% doanh số xe mới) và có khả năng ảnh hưởng lớn đến xu hướng toàn cầu. (doc_30)
+
+Tuy nhiên, bằng chứng không cung cấp một con số dự báo cụ thể về tỷ lệ áp dụng EV vào năm 2030.
+```
+
+GraphRAG seed entities:
+Inflation Reduction Act, EV sales
+
+GraphRAG sources:
+doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_6: U.S. Electric Vehicle Investments Have Grown to $188 Billion ...<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_48: US electric vehicle charging market growth: PwC
+
+GraphRAG answer:
+```text
+The Inflation Reduction Act (IRA) cùng với các khoản đầu tư vào trạm sạc có thể thúc đẩy mạnh mẽ việc áp dụng xe điện (EV) tại Mỹ vào năm 2030 bằng cách:
+1.  Cung cấp khoản tín dụng thuế lên tới $7,500 cho việc mua xe điện mới (từ IRA).
+2.  Đầu tư hơn $21 tỷ để mở rộng mạng lưới trạm sạc công cộng, với mục tiêu tăng từ khoảng 160,000 trạm (năm 2023) lên gần 1 triệu trạm vào năm 2030.
+3.  Hỗ trợ mục tiêu của chính phủ Mỹ là xe điện chiếm một nửa tổng doanh số bán ô tô và xe tải vào năm 2030.
+
+Tuy nhiên, bằng chứng được cung cấp không đề cập đến bất kỳ ảnh hưởng tiêu cực tiềm tàng nào hoặc các yếu tố có thể cản trở mục tiêu này (như bất ổn chính trị, lo ngại về giá cả).
+```
+
+LLM judge:
+```text
+Flat RAG: 4/5 - Đúng 3/4 điểm evidence (thiếu khẳng định 2030 adoption depends on charger availability), trích dẫn tài liệu rõ.
+
+GraphRAG: 4/5 - Bao phủ đủ 3 điểm evidence và kết nối tốt với mục tiêu 2030, không trích dẫn trực tiếp tài liệu.
+
+Better: Tie
+
+Hallucination risk: Cả hai đều an toàn, không có thông tin sai so với evidence.
+```
+### Case 11: Why are hybrids receiving more attention during the EV slowdown?
+
+Expected evidence:
+- hybrid sales have accelerated while EV sales momentum slowed
+- HEVs can have shorter payback periods
+- multiple powertrains may support automaker earnings and investment
+
+Flat RAG sources:
+doc_40: Why are EV sales slowing? | Goldman Sachs<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_45: Robert Heppenstall - American Airlines | LinkedIn<br>doc_63: How did China come to dominate the world of electric cars? | MIT ...
+
+Flat RAG answer:
+```text
+Người tiêu dùng có nhiều lo ngại hơn về chi phí vốn (giá xe điện đã qua sử dụng giảm mạnh), sự không chắc chắn về chính sách hỗ trợ của chính phủ, và đặc biệt là sự thiếu hụt trạm sạc nhanh. Những vấn đề này khiến doanh số xe thuần điện (EV) chậm lại, thậm chí có thể giảm. Trong bối cảnh đó, doanh số xe lai (HEV) và xe lai sạc điện (PHEV) đã tăng tốc, thậm chí vượt qua tốc độ tăng trưởng của EV ở một số thị trường, vì chúng được cho là cạnh tranh hơn so với dự kiến ban đầu và ít phụ thuộc vào hạ tầng sạc.
+```
+
+GraphRAG seed entities:
+EV slowdown, hybrids
+
+GraphRAG sources:
+doc_40: Why are EV sales slowing? | Goldman Sachs<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_9: Electric vehicle trends | Deloitte Insights<br>doc_36: U.S. electric vehicle sales soar into '24 - International Council on ...<br>doc_32: Electric Vehicles: Slow, then Fast
+
+GraphRAG answer:
+```text
+Các xe hybrid (HEV và PHEV) đang nhận được nhiều sự chú ý hơn trong thời kỳ tăng trưởng EV chậm lại vì chúng tỏ ra cạnh tranh hơn so với dự kiến ban đầu, và cung cấp một lựa chọn thay thế trong bối cảnh thị trường EV đang đối mặt với các trở ngại như chi phí vốn cao (do giá xe điện đã qua sử dụng giảm mạnh), thiếu hụt trạm sạc nhanh, và sự không chắc chắn về chính sách của chính phủ.
+```
+
+LLM judge:
+```text
+Flat RAG: 4/5 - Trả lời bao quát lý do EV chậm lại và HEV tăng tốc, nhưng thiếu đề cập đến payback period và hỗ trợ doanh thu/tái đầu tư.
+
+GraphRAG: 4/5 - Tương tự, giải thích tốt động lực thị trường nhưng bỏ sót bằng chứng về thời gian hoàn vốn và vai trò của powertrains với thu nhập nhà sản xuất.
+
+Better: Tie (GraphRAG có cấu trúc rõ hơn, nhưng cả hai đều thiếu bằng chứng tương tự)
+
+Hallucination risk: Thấp. Cả hai đều không đưa ra thông tin sai lệch so bằng chứng, chỉ là thiếu một số điểm.
+```
+### Case 12: How do Chinese EV makers affect the competitive outlook for US and global EV markets?
+
+Expected evidence:
+- China has EV supply-chain and cost advantages
+- Chinese makers are expanding abroad
+- tariffs and policy responses affect US and European competition
+
+Flat RAG sources:
+doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_39: Understanding Consumer Attitudes Towards Electric Vehicles<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_40: Why are EV sales slowing? | Goldman Sachs
+
+Flat RAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, các nhà sản xuất xe điện (EV) Trung Quốc tác động đến triển vọng cạnh tranh trên thị trường EV toàn cầu và Mỹ thông qua các yếu tố chính sau:
+
+1. **Đổi mới quy trình và tốc độ ra thị trường:** Họ mạnh về đổi mới quy trình, phát triển sản phẩm nhanh hơn khoảng 30% so với các hãng xe truyền thống. Thời gian từ khi bắt đầu dự án đến khi giao xe (ví dụ Nio dưới 36 tháng) ngắn hơn nhiều so với mức khoảng 4 năm của các hãng xe truyền thống. Điều này cho phép họ ra mắt nhiều mẫu xe mới và cập nhật hơn đáng kể từ 2017-2023.
+
+2. **Lợi thế chi phí và năng lực sản xuất:** Trung Quốc có lợi thế chi phí nhờ chuỗi cung ứng EV tập trung (bao gồm pin) và rất cạnh tranh trong công nghệ pin lithium sắt photphat. Nước này hiện có công suất sản xuất dư thừa hơn 5 triệu xe, với mục tiêu vừa mở rộng thị trường nội địa vừa xuất khẩu EV ra thị trường nước ngoài.
+
+3. **Hỗ trợ chiến lược của chính phủ:** Lợi thế cạnh tranh của các công ty Trung Quốc là kết quả của một chiến lược đa diện, bao gồm hỗ trợ của chính phủ thông qua các chính sách và trợ cấp toàn diện.
+
+4. **Phản ứng từ các thị trường khác:** Nhiều chính sách của Mỹ, Châu Âu và Ấn Độ tìm cách ngăn chặn xe điện Trung Quốc và nước ngoài khác xâm nhập vào chuỗi cung ứng EV của họ.
+
+**Bằng chứng thiếu:** Tài liệu không cung cấp chi tiết cụ thể về tác động trực tiếp đến doanh số hoặc thị phần của các hãng xe Mỹ, hay phản ứng chiến lược cụ thể từ từng công ty Mỹ.
+```
+
+GraphRAG seed entities:
+United States, China
+
+GraphRAG sources:
+doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_40: Why are EV sales slowing? | Goldman Sachs<br>doc_15: Trends in the electric vehicle industry – Global EV Outlook 2024 ...
+
+GraphRAG answer:
+```text
+Các nhà sản xuất xe điện (EV) Trung Quốc tác động đến triển vọng cạnh tranh của thị trường EV toàn cầu và Mỹ chủ yếu thông qua:
+1.  **Tốc độ đổi mới nhanh hơn**: Họ có thời gian phát triển nhanh hơn khoảng 30% so với các hãng xe truyền thống, đưa mẫu mới ra thị trường nhanh và cập nhật sản phẩm thường xuyên hơn (1.3 năm so với 4.2 năm).
+2.  **Lợi thế về chi phí và chuỗi cung ứng**: Trung Quốc có chuỗi cung ứng EV tập trung (đặc biệt về pin) và lợi thế cạnh tranh trong công nghệ pin lithium sắt photphat.
+3.  **Hỗ trợ mạnh mẽ của chính phủ**: Các chính sách và trợ cấp toàn diện của chính phủ Trung Quốc thúc đẩy phát triển và xuất khẩu EV.
+4.  **Dư thừa công suất và mục tiêu xuất khẩu**: Với công suất dư thừa hơn 5 triệu xe, Trung Quốc đang tích cực tìm cách xuất khẩu ra thị trường nước ngoài, đe dọa trực tiếp đến các thương hiệu địa phương, đặc biệt là ở Đông Nam Á.
+5.  **Phản ứng của các thị trường khác**: Chính sách của Mỹ, Châu Âu và Ấn Độ tìm cách ngăn chặn xe điện Trung Quốc xâm nhập chuỗi cung ứng của họ.
+
+**Bằng chứng còn thiếu**: Tài liệu cung cấp không đề cập cụ thể đến tác động lên **thị trường Mỹ** (ví dụ: thị phần, phản ứng của các hãng xe Mỹ, doanh số) hoặc dữ liệu định lượng về ảnh hưởng cạnh tranh trực tiếp ngoài khu vực Đông Nam Á.
+```
+
+LLM judge:
+```text
+Flat RAG: 4/5 – Bao phủ tốt các ý chính: lợi thế chi phí/chuỗi cung ứng, mở rộng ra nước ngoài, và phản ứng chính sách từ Mỹ/Châu Âu. Thiếu chi tiết về "tariffs" (thuế quan) cụ thể.
+
+GraphRAG: 5/5 – Đầy đủ và chính xác, bao gồm cả ba điểm bằng chứng mong đợi, có đề cập đến xuất khẩu và phản ứng chính sách (bao gồm cả ý ngăn chặn) một cách rõ ràng.
+
+Better: GraphRAG
+
+Hallucination risk: Thấp – Cả hai câu trả lời đều bám sát bằng chứng, không thêm thông tin ngoại lai đáng kể.
+```
+### Case 13: What business opportunities are created by growth in the US EV charging market?
+
+Expected evidence:
+- PwC forecasts large growth in charge points and EVs by 2030
+- hardware, software, installers, and charge point operators are value pools
+- CPOs can capture a larger share over time
+
+Flat RAG sources:
+doc_48: US electric vehicle charging market growth: PwC<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_9: Electric vehicle trends | Deloitte Insights
+
+Flat RAG answer:
+```text
+Thị trường sạc xe điện (EV) của Mỹ đang phát triển mạnh, tạo ra nhiều cơ hội kinh doanh, đặc biệt là trong bốn nhóm giá trị chính của thị trường thiết bị phụ trợ sạc điện (EVSE):
+
+1.  **Phần cứng:** Sản xuất và cung cấp các thiết bị sạc (trạm sạc).
+2.  **Phần mềm:** Phát triển các nền tảng quản lý, vận hành và thanh toán cho trạm sạc.
+3.  **Đơn vị lắp đặt:** Các doanh nghiệp chuyên thực hiện việc lắp đặt cơ sở hạ tầng sạc.
+4.  **Nhà điều hành trạm sạc (CPO):** Đây được dự đoán là cơ hội lớn nhất, chiếm phần lớn giá trị thị trường (khoảng 65% vào năm 2040, tương đương 65 tỷ USD doanh thu). Các CPO chịu trách nhiệm xây dựng, vận hành và bảo trì mạng lưới trạm sạc.
+
+Ngoài ra, bằng chứng cũng chỉ ra cơ hội cho các **tiện ích điện** (như PSE&G ở New Jersey) khi họ tham gia vào không gian sạc EV thông qua các chương trình hỗ trợ chi phí lắp đặt, và nhu cầu cấp thiết đối với việc phát triển các **trạm sạc nhanh DC**, mặc dù chi phí đầu tư cao.
+```
+
+GraphRAG seed entities:
+United States
+
+GraphRAG sources:
+doc_48: US electric vehicle charging market growth: PwC<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_9: Electric vehicle trends | Deloitte Insights<br>doc_8: Electric Vehicle Myths | US EPA<br>doc_70: Exploring consumer sentiment on electric-vehicle charging
+
+GraphRAG answer:
+```text
+Tăng trưởng thị trường sạc xe điện (EV) tại Hoa Kỳ tạo ra các cơ hội kinh doanh chủ yếu trong bốn nhóm giá trị của thị trường thiết bị và dịch vụ sạc xe điện (EVSE): phần cứng, phần mềm, dịch vụ lắp đặt và đặc biệt là các nhà khai thác trạm sạc (CPO). Nhóm CPO, chuyên xây dựng, vận hành và bảo trì trạm sạc, dự kiến chiếm phần lớn giá trị thị trường, với doanh thu ước đạt khoảng 65 tỷ USD vào năm 2040.
+```
+
+LLM judge:
+```text
+Flat RAG: 5/5 - Bao phủ đầy đủ bằng chứng mong đợi
+GraphRAG: 4/5 - Thiếu đề cập đến dự báo tăng trưởng của PwC về điểm sạc và xe điện
+Better: Flat RAG
+Hallucination risk: Cả hai không có ảo giác từ bằng chứng.
+```
+### Case 14: Which regions or states stand out in US charging infrastructure availability?
+
+Expected evidence:
+- California has the most charger points
+- New York and Texas are also high-ranking states
+- charging is concentrated in metropolitan statistical areas
+
+Flat RAG sources:
+doc_9: Electric vehicle trends | Deloitte Insights<br>doc_54: When does reinventing the wheel make perfect sense? | EY - Global<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...
+
+Flat RAG answer:
+```text
+Tài liệu bằng chứng được cung cấp không chứa thông tin về các khu vực hay tiểu bang cụ thể nào nổi bật về khả năng sẵn có của cơ sở hạ tầng sạc xe điện tại Hoa Kỳ. Thông tin còn thiếu: dữ liệu hoặc phân tích so sánh về mật độ trạm sạc, tỷ lệ sở hữu xe điện, hoặc đầu tư cơ sở hạ tầng theo từng tiểu bang/vùng của Mỹ.
+```
+
+GraphRAG seed entities:
+United States, charging infrastructure
+
+GraphRAG sources:
+doc_9: Electric vehicle trends | Deloitte Insights<br>doc_54: When does reinventing the wheel make perfect sense? | EY - Global<br>doc_48: US electric vehicle charging market growth: PwC<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_27: Zero-Emission Electric Vehicle Charging and Refueling ...
+
+GraphRAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, không có tài liệu nào đề cập đến các khu vực hoặc tiểu bang cụ thể ở Hoa Kỳ có cơ sở hạ tầng sạc xe điện nổi bật. Bằng chứng chỉ thảo luận về mục tiêu quốc gia của Hoa Kỳ là có 500.000 trạm sạc vào năm 2030 và một ví dụ chung về chương trình của một công ty tiện ích ở New Jersey.
+```
+
+LLM judge:
+```text
+Flat RAG: 0/5 – Không xác định được thông tin từ bằng chứng, trong khi bằng chứng cung cấp rõ ba tiểu bang và khu vực đô thị.
+
+GraphRAG: 0/5 – Tương tự, bỏ qua hoàn toàn bằng chứng được cung cấp và đưa ra thông tin không liên quan.
+
+Better: Tie – Cả hai đều không trả lời dựa trên bằng chứng.
+
+Hallucination risk: Rất cao – Cả hai đều tự bổ sung kiến thức ngoài bằng chứng và trả lời sai lệch.
+```
+### Case 15: How do environment and fuel savings motives interact with infrastructure concerns?
+
+Expected evidence:
+- interested consumers cite environment and gas savings
+- public charging availability remains a major obstacle
+- confidence in infrastructure predicts willingness to consider EVs
+
+Flat RAG sources:
+doc_39: Understanding Consumer Attitudes Towards Electric Vehicles<br>doc_3: Electric Vehicle Benefits and ... - Alternative Fuels Data Center<br>doc_38: Why Rising Anti EV Sentiment Risks the Auto Industry's Future<br>doc_70: Exploring consumer sentiment on electric-vehicle charging
+
+Flat RAG answer:
+```text
+Mặc dù cả hai động cơ tiết kiệm môi trường và nhiên liệu đều khuyến khích mua xe điện, nhưng chúng có thể tương tác với vấn đề cơ sở hạ tầng theo hai cách chính:
+
+1.  Động cơ tiết kiệm nhiên liệu có thể bị cản trở bởi những lo ngại về cơ sở hạ tầng. Ở khu vực Nam nước Mỹ, việc tiết kiệm chi phí nhiên liệu và bảo trì là yếu tố quan trọng nhất, nhưng đồng thời, "thiếu cơ sở hạ tầng sạc" là một trong ba mối lo ngại hàng đầu ngăn cản người mua tiềm năng.
+
+2.  Việc thiếu cơ sở hạ tầng có thể vượt qua các động cơ khác trong việc ra quyết định. Ở vùng Đông Bắc và Trung Tây nước Mỹ, yếu tố quan trọng nhất đối với người mua tiềm năng là tính sẵn có của trạm sạc, cho thấy mối quan tâm về cơ sở hạ tầng thậm chí có thể ưu tiên hơn các động cơ về chi phí hoặc môi trường tại những khu vực đó.
+```
+
+GraphRAG seed entities:
+United States, charging infrastructure, hybrids, battery
+
+GraphRAG sources:
+doc_3: Electric Vehicle Benefits and ... - Alternative Fuels Data Center<br>doc_9: Electric vehicle trends | Deloitte Insights<br>doc_39: Understanding Consumer Attitudes Towards Electric Vehicles<br>doc_70: Exploring consumer sentiment on electric-vehicle charging<br>doc_38: Why Rising Anti EV Sentiment Risks the Auto Industry's Future
+
+GraphRAG answer:
+```text
+The evidence shows that environment and fuel savings motives can be overshadowed by infrastructure concerns, creating a barrier to adoption. Prospective buyers prioritize charging availability (e.g., in the Northeast and Midwest US) and cite "lack of charging infrastructure" as a top concern, which slows widespread EV adoption despite significant per-mile fuel cost savings.
+```
+
+LLM judge:
+```text
+Flat RAG: 2/5 – Trả lời về hai tương tác nhưng chỉ nhắc đến động cơ tiết kiệm nhiên liệu (fuel savings), không nhắc gì đến môi trường (environment), và không liên kết trực tiếp được với bằng chứng về “willingness to consider EVs”.
+
+GraphRAG: 5/5 – Chỉ ra rõ ràng mối quan hệ tương tác: động cơ bị “overshadowed” bởi lo ngại hạ tầng, liên kết đầy đủ cả ba phần bằng chứng dự kiến (environment, fuel savings, infrastructure concern, willingness).
+
+Better: GraphRAG
+Hallucination risk: Flat RAG có nguy cơ cao hơn do tạo ra phân tích không được hỗ trợ trực tiếp bằng bằng chứng (ví dụ: tách biệt khu vực Nam, Đông Bắc, Trung Tây không có trong bằng chứng). GraphRAG tổng hợp và liên kết đúng trọng tâm bằng chứng.
+```
+### Case 16: What does Ford and GM scaling back production targets imply about EV sentiment?
+
+Expected evidence:
+- Ford and GM scaled back near-term production because demand was softer than forecasts
+- they still plan to sell more EVs
+- they remain committed to an electric future
+
+Flat RAG sources:
+doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_9: Electric vehicle trends | Deloitte Insights
+
+Flat RAG answer:
+```text
+Bằng chứng cung cấp không đủ để trả lời câu hỏi.
+
+Các tài liệu có đề cập đến việc Ford và GM đang tăng tốc sản xuất xe điện, mở rộng mô hình, và đặt ra các mục tiêu sản xuất lớn hơn. Không có bằng chứng nào đề cập đến việc họ cắt giảm hoặc thu hẹp các mục tiêu sản xuất.
+```
+
+GraphRAG seed entities:
+Ford, General Motors
+
+GraphRAG sources:
+doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_28: Electric vehicle trends | Deloitte Insights<br>doc_66: How Innovative Is China in the Electric Vehicle and Battery ...<br>doc_43: How Innovative Is China in the Electric Vehicle and Battery Industries?
+
+GraphRAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, không thể trả lời câu hỏi này. Bằng chứng không đề cập đến việc Ford và GM **giảm bớt** mục tiêu sản xuất. Trái lại, bằng chứng chỉ ra:
+- Ford tăng trưởng doanh số EV 72% năm 2024 và đang tập trung vào các mẫu xe giá rẻ.
+- GM và Ford đang **thúc đẩy (accelerating)** sản xuất EV.
+- Các hãng sản xuất thiết bị gốc (OEM) đang công bố các cam kết chiến lược mới, tăng mục tiêu sản xuất và đưa ra nhiều mẫu xe mới.
+
+Điều còn thiếu là bằng chứng cụ thể về việc Ford và GM công bố **cắt giảm hoặc thu hẹp** mục tiêu sản xuất xe điện.
+```
+
+LLM judge:
+```text
+Flat RAG: 5/5 - Khẳng định bằng chứng không đủ để trả lời, khớp chính xác với expected evidence.
+
+GraphRAG: 3/5 - Trả lời không thể trả lời nhưng thêm thông tin trái ngược (ví dụ: đang thúc đẩy sản xuất), gây hiểu lầm về bối cảnh.
+
+Better: Flat RAG
+Hallucination risk: GraphRAG có nguy cơ ảo giác vì đưa ra thông tin thực tế không có trong bằng chứng cho trước.
+```
+### Case 17: How do EV prices and incentives affect affordability in the US market?
+
+Expected evidence:
+- Tesla price cuts lowered average transaction prices
+- incentive spending increased
+- tax credits and leasing can improve affordability
+
+Flat RAG sources:
+doc_35: Three big reasons Americans haven't rapidly adopted EVs<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_62: The EV Transition Makes the U.S. Economy More Resilient - Frank ...
+
+Flat RAG answer:
+```text
+Giá EV và các biện pháp khuyến khích vẫn chưa đủ để giải quyết vấn đề khả năng chi trả cho người tiêu dùng trung bình tại thị trường Mỹ. Mặc dù giá EV đã giảm (giảm 10,8% so với năm trước) và ưu đãi tăng đáng kể (tăng gấp ba), giá trung bình của một EV mới (55.353 USD) vẫn cao hơn 17% so với giá trung bình của một chiếc xe mới (47.401 USD). Sự chênh lệch giá ban đầu với xe chạy xăng vẫn còn lớn, từ 15.000 đến 20.000 USD. Các ưu đãi, bao gồm trợ cấp liên bang 7.500 USD và các khoản tín dụng của tiểu bang, là yếu tố quyết định quan trọng nhưng không thể hạ giá EV xuống thấp hơn xe xăng hoặc đưa nó vào mức giá phải chăng cho một gia đình có thu nhập trung bình 70.000 USD, khi giá EV trung bình năm 2022 vượt quá 60.000 USD.
+```
+
+GraphRAG seed entities:
+United States, consumer incentives, EV prices
+
+GraphRAG sources:
+doc_35: Three big reasons Americans haven't rapidly adopted EVs<br>doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_69: Electric vehicle trends | Deloitte Insights<br>doc_3: Electric Vehicle Benefits and ... - Alternative Fuels Data Center<br>doc_62: The EV Transition Makes the U.S. Economy More Resilient - Frank ...
+
+GraphRAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, giá xe điện (EV) vẫn cao hơn đáng kể so với xe động cơ đốt trong (ICE) truyền thống, tạo ra rào cản lớn về khả năng chi trả. Mặc dù đã có các chương trình khuyến khích của chính phủ và sự cạnh tranh giá (như cuộc chiến giá của Tesla) giúp thu hẹp khoảng cách giá, nhưng mức giá trung bình của EV vẫn cao hơn 17% so với giá xe mới trung bình (tính đến tháng 1/2024). Các ưu đãi tài chính (như trợ cấp tiền mặt, giảm thuế) đã tăng lên đáng kể, giúp tăng khả năng chi trả và sức hấp dẫn của EV, nhưng việc một số chính phủ xem xét rút lại các ưu đãi này sau khi EV đạt ngang giá với ICE có thể ảnh hưởng tiêu cực đến doanh số. Dự kiến giá sẽ cân bằng hơn trong tương lai khi công nghệ pin phát triển và sản lượng tăng, đồng thời chi phí ban đầu có thể được bù đắp một phần nhờ tiết kiệm nhiên liệu và các ưu đãi.
+```
+
+LLM judge:
+```text
+Flat RAG: 2/5 - Nhắc đến giảm giá và khuyến khích nhưng không nêu rõ Tesla hay chi tiêu tăng, và bỏ lỡ tín dụng thuế/leasing.
+GraphRAG: 3/5 - Có đề cập cắt giảm giá (Tesla) và khuyến khích tăng, nhưng thiếu chi tiết về tín dụng thuế $7,500 và cách leasing cải thiện khả năng chi trả.
+Better: GraphRAG
+Hallucination risk: Cả hai đều thêm chi tiết không có trong bằng chứng (ví dụ: giá cụ thể 2022, thu nhập gia đình, chính phủ rút ưu đãi).
+```
+### Case 18: How do ChargePoint, Tesla Supercharger, and Electrify America differ in US charging networks?
+
+Expected evidence:
+- ChargePoint leads total public charging ports
+- Tesla dominates DC fast charging through Supercharger
+- Electrify America is second in fast charging after Tesla
+
+Flat RAG sources:
+doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_48: US electric vehicle charging market growth: PwC
+
+Flat RAG answer:
+```text
+Dựa trên bằng chứng được cung cấp:
+
+**ChargePoint** là mạng lưới trạm sạc công cộng lớn nhất tại Mỹ, chiếm 37% tổng số cổng sạc, với hơn 61,000 cổng sạc trải rộng trên 34,000 địa điểm. Nó bao gồm cả sạc Level 2 và DC fast charging (chỉ chiếm 6.7% thị phần sạc nhanh).
+
+**Tesla Supercharger** thống trị thị trường sạc nhanh DC, chiếm 62% tổng số cổng sạc nhanh tại Mỹ, với 24,000 siêu sạc tại 2,100 địa điểm. Mạng lưới này hiện chỉ dành riêng cho xe Tesla và được biết đến với trải nghiệm sạc nhanh và mượt mà nhất. Xét tổng thể tất cả các cấp độ sạc, Tesla đứng thứ hai sau ChargePoint, chiếm 21% tổng số điểm sạc.
+
+**Electrify America** giữ vị trí thứ hai trong lĩnh vực sạc nhanh (sau Tesla), với 10% thị phần. Tuy nhiên, xét trên toàn bộ mạng lưới sạc công cộng (bao gồm cả Level 2), Electrify America chỉ chiếm 2.6% thị phần.
+
+**Điểm khác biệt chính:**
+1. **Quy mô tổng thể:** ChargePoint > Tesla > Electrify America.
+2. **Thị phần sạc nhanh DC:** Tesla (62%) > Electrify America (10%) > ChargePoint (6.7%).
+3. **Khả năng tiếp cận:** ChargePoint và Electrify America mở cho mọi xe điện, trong khi Tesla Supercharger (hiện tại) chỉ dành cho xe Tesla.
+```
+
+GraphRAG seed entities:
+United States, Tesla, ChargePoint, Electrify America
+
+GraphRAG sources:
+doc_30: US EV Market Passed the 1 Million Sales Mark in 2023<br>doc_61: What Are Tesla's (TSLA) Main Competitors?<br>doc_63: How did China come to dominate the world of electric cars? | MIT ...<br>doc_48: US electric vehicle charging market growth: PwC<br>doc_54: When does reinventing the wheel make perfect sense? | EY - Global
+
+GraphRAG answer:
+```text
+Dựa trên bằng chứng được cung cấp:
+- **ChargePoint** là mạng lưới trạm sạc công cộng lớn nhất tại Mỹ, chiếm 37% tổng số cổng sạc công cộng, với hơn 61.000 cổng sạc tại 34.000 địa điểm.
+- **Tesla Supercharger** chiếm vị trí thứ hai trong tổng thể mạng lưới sạc, nhưng thống trị thị trường sạc nhanh DC. Mạng lưới này hiện chỉ dành cho xe Tesla, được biết đến với trải nghiệm sạc nhanh và mượt mà nhất.
+- **Electrify America** không được đề cập trong các bằng chứng được cung cấp.
+
+Bằng chứng thiếu thông tin về Electrify America để so sánh đầy đủ.
+```
+
+LLM judge:
+```text
+Flat RAG: 4/5 - Đầy đủ thông tin và so sánh được, có số liệu hỗ trợ nhưng hơi dài dòng.
+GraphRAG: 2/5 - Thiếu hoàn toàn thông tin về Electrify America, không thể đưa ra so sánh đầy đủ.
+Better: Flat RAG
+Hallucination risk: GraphRAG có nguy cơ cao hơn vì thiếu thông tin và không chỉ ra rõ ràng sự thiếu hụt này.
+```
+### Case 19: How do pollution standards and policy signals affect EV investment decisions?
+
+Expected evidence:
+- standards can give automakers and charging providers confidence to invest
+- weakening standards can affect the EV demand narrative
+- EVs support clean air, public health, and climate goals
+
+Flat RAG sources:
+doc_18: Electric vehicles - IEA<br>doc_36: U.S. electric vehicle sales soar into '24 - International Council on ...<br>doc_6: U.S. Electric Vehicle Investments Have Grown to $188 Billion ...<br>doc_8: Electric Vehicle Myths | US EPA<br>doc_56: China: Looking beyond the headlines | BNY Investments
+
+Flat RAG answer:
+```text
+Các tiêu chuẩn và tín hiệu chính sách ô nhiễm tác động đến quyết định đầu tư EV thông qua việc thúc đẩy thị trường và giảm rủi ro đầu tư. Cụ thể:
+- Các tiêu chuẩn khắt khe về hiệu suất và/hoặc CO2 đã thúc đẩy việc áp dụng EV ở hầu hết các thị trường hàng đầu.
+- Việc làm suy yếu các tiêu chuẩn ô nhiễm mới được đề xuất được coi là có liên quan đến việc nói về thiếu cầu đối với EV.
+- Chính sách như "feebate", tiêu chuẩn xe không phát thải (ZEV) và ưu đãi mua hàng có thể giúp đẩy nhanh quá trình chuyển đổi, tạo ra tín hiệu giá và hỗ trợ nền tảng hạ tầng sạc.
+- Việc triển khai theo định hướng chính sách có thể giúp khởi động lĩnh vực này, làm cho các phương tiện như xe buýt và xe tải điện trở nên cạnh tranh hơn.
+```
+
+GraphRAG seed entities:
+policy
+
+GraphRAG sources:
+doc_18: Electric vehicles - IEA<br>doc_36: U.S. electric vehicle sales soar into '24 - International Council on ...<br>doc_6: U.S. Electric Vehicle Investments Have Grown to $188 Billion ...<br>doc_8: Electric Vehicle Myths | US EPA<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...
+
+GraphRAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, các tiêu chuẩn ô nhiễm và tín hiệu chính sách ảnh hưởng đến quyết định đầu tư vào xe điện (EV) theo những cách sau:
+
+*   **Tiêu chuẩn CO2 và hiệu suất nghiêm ngặt:** Các tiêu chuẩn khắt khe về hiệu suất và/hoặc CO2 cho phương tiện được xác định là công cụ thúc đẩy mạnh mẽ việc áp dụng EV và nên được tất cả các quốc gia áp dụng để đẩy nhanh quá trình chuyển đổi. Việc làm suy yếu các tiêu chuẩn ô nhiễm mới được đề xuất có thể tạo ra tín hiệu tiêu cực, trong khi việc thiết lập và thắt chặt các tiêu chuẩn này tạo ra động lực rõ ràng cho đầu tư.
+*   **Lệnh bán hàng ZEV và ưu đãi mua hàng:** Các lệnh bán hàng Xe thải phí Zero (ZEV) và các ưu đãi mua hàng (như tín dụng thuế liên bang) được coi là những công cụ chính sách có thể giúp tăng tốc quá trình chuyển đổi, tạo ra nhu cầu ổn định và giảm rủi ro cho các nhà đầu tư.
+*   **Tín hiệu giá:** Các chương trình "phí phạt" trung lập về ngân sách (đánh thuế xe động cơ đốt trong kém hiệu quả để tài trợ trợ cấp cho xe phát thải thấp) và các ưu đãi thuế tạo ra tín hiệu giá trực tiếp, cải thiện tính cạnh tranh về chi phí của EV và hỗ trợ trường hợp kinh tế cho việc điện khí hóa.
+*   **Cơ sở hạ tầng sạc:** Sự sẵn có của cơ sở hạ tầng sạc là một yếu tố quan trọng giúp tăng cường trường hợp kinh tế cho việc điện khí hóa. Các quy định về triển khai và tiêu chuẩn hóa mạng lưới sạc (như các chỉ thị của EU) là rất quan trọng, và các khoản đầu tư lớn vào cơ sở hạ tầng công cộng và tư nhân (ví dụ: 21 tỷ USD) giảm thiểu rào cản và tạo sự tự tin cho đầu tư.
+*   **Triển khai do chính sách dẫn dắt:** Đối với các phân khúc như xe buýt và xe tải, việc triển khai do chính sách dẫn dắt có thể giúp khởi động lĩnh vực này, tạo ra thị trường ban đầu và chứng minh tính cạnh tranh về chi phí sở hữu tổng thể.
+
+Bằng chứng thiếu thông tin chi tiết về **cách thức cụ thể** các công ty hoặc nhà đầu tư tư nhân phân tích và phản ứng với những tín hiệu chính sách này trong quá trình ra quyết định đầu tư nội bộ của họ (ví dụ: phân tích rủi ro, tính toán lợi nhuận).
+```
+
+LLM judge:
+```text
+Flat RAG: 4/5 - Cung cấp đủ ba ý then chốt trong evidence (tiêu chuẩn thúc đẩy đầu tư, làm suy yếu ảnh hưởng cầu, hỗ trợ mục tiêu sạch), nhưng thiếu cụm từ "give confidence" từ evidence.
+
+GraphRAG: 5/5 - Bao phủ hoàn toàn và chính xác mọi điểm trong expected evidence, giải thích rõ ràng cách tiêu chuẩn tạo động lực và sự tự tin, việc làm suy yếu ảnh hưởng tới câu chuyện cầu, và cách EV phục vụ các mục tiêu sạch.
+
+Better: GraphRAG
+
+Hallucination risk: Flat RAG có nguy cơ thấp, GraphRAG không có nguy cơ (không thêm thông tin ngoài evidence).
+```
+### Case 20: How does the US EV market compare with global EV market trends?
+
+Expected evidence:
+- EV markets differ by region
+- China dominates global EV sales but other markets are growing
+- some global markets are slowing while the US still shows mixed growth
+
+Flat RAG sources:
+doc_5: Electric Vehicles: Slow, then Fast<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_57: Global growth, inflation and China on Bloomberg TV | Virginie ...
+
+Flat RAG answer:
+```text
+Dựa trên bằng chứng được cung cấp, không thể trả lời câu hỏi "Thị trường xe điện Mỹ so với xu hướng thị trường xe điện toàn cầu như thế nào?".
+
+Bằng chứng bị thiếu:
+- Bằng chứng có đề cập đến thị trường Mỹ (ví dụ: Tesla chiếm 50.9% thị trường EV Mỹ) và một số công ty toàn cầu, nhưng không có dữ liệu so sánh trực tiếp về xu hướng tăng trưởng, quy mô thị trường, tốc độ chuyển đổi, hoặc chính sách giữa Mỹ và toàn cầu.
+- Các tài liệu [doc_5] và [doc_32] chỉ ra một báo cáo về "State of the Global EV Market–Navigating a Slowing ‘24 EV Market" nhưng không cung cấp chi tiết nội dung so sánh cụ thể.
+- Không có bằng chứng nào mô tả xu hướng chung của thị trường toàn cầu (ví dụ: đang tăng trưởng hay chậm lại) để đem ra so sánh với tình hình tại Mỹ.
+```
+
+GraphRAG seed entities:
+United States
+
+GraphRAG sources:
+doc_32: Electric Vehicles: Slow, then Fast<br>doc_64: How Chinese Companies are Dominating Electric Vehicle Market ...<br>doc_57: Global growth, inflation and China on Bloomberg TV | Virginie ...<br>doc_40: Why are EV sales slowing? | Goldman Sachs<br>doc_52: Market Insights | iShares - BlackRock
+
+GraphRAG answer:
+```text
+Thị trường EV ở Mỹ được nhắc đến là thị trường mà Tesla đang thống trị. Tuy nhiên, xu hướng chung toàn cầu đang cho thấy sự chậm lại trong năm 2024, với động lực bán hàng giảm tốc. Tại thị trường toàn cầu, các hãng xe Trung Quốc (như Hozon Auto, Chery Automobile), Hàn Quốc (Hyundai), Đức (BMW, Volkswagen) và tập đoàn Stellantis đang có những bước tiến đáng kể, tạo nên một thị trường cạnh tranh và phân mảnh.
+
+Bằng chứng được cung cấp không có thông tin cụ thể so sánh tốc độ tăng trưởng, thị phần hay chính sách giữa thị trường Mỹ và toàn cầu.
+```
+
+LLM judge:
+```text
+Flat RAG: 2/5 - Đúng là không đủ bằng chứng để trả lời, nhưng có phần bỏ qua một số manh mối trong bằng chứng (ví dụ: Mỹ có tăng trưởng hỗn hợp, thị trường toàn cầu đang chậm lại).
+
+GraphRAG: 3/5 - Trích dẫn chính xác xu hướng chung toàn cầu đang chậm lại và nhấn mạnh tính cạnh tranh, nhưng thiếu so sánh rõ ràng với thị trường Mỹ từ bằng chứng.
+
+Better: GraphRAG
+
+Hallucination risk: GraphRAG có nguy cơ nhẹ do thêm chi tiết về các hãng xe cụ thể không có trong bằng chứng cốt lõi (EV markets differ by region, China dominates).
+```
