@@ -4,11 +4,11 @@
 
 | Step | Seconds |
 |---|---:|
-| Load 70 documents | 0.112 |
-| Split into 1796 chunks | 0.203 |
-| Build Flat RAG vector index | 7.931 |
-| Build NetworkX knowledge graph | 8.210 |
-| Total startup/build time | 16.456 |
+| Load 70 documents | 0.253 |
+| Split into 1796 chunks | 0.312 |
+| Build Flat RAG vector index | 14.793 |
+| Build NetworkX knowledge graph | 12.305 |
+| Total startup/build time | 27.664 |
 
 ## Graph Size
 

@@ -29,7 +29,7 @@ Flat RAG uses ChromaDB when available over TF-IDF vectors; GraphRAG uses Network
 | 20 | How does the US EV market compare with global EV market trends? | 5/6 | 5/6 | Coverage is similar; inspect answer faithfulness. | Flat RAG: 2/5 - Đúng là không đủ bằng chứng để trả lời, nhưng có phần bỏ qua một số manh mối trong bằng chứng (ví dụ: Mỹ có tăng trưởng hỗn hợp, thị trường toàn cầu đang chậm lại).<br><br>GraphRAG: 3/5 - Trích dẫn chính xác xu hướng chung toàn cầu đang chậm lại và nhấn mạnh tính cạnh tranh, nhưng thiếu so sánh rõ ràng với thị trường Mỹ từ bằng chứng.<br><br>Better: GraphRAG<br><br>Hallucination risk: GraphRAG có nguy cơ nhẹ do thêm chi tiết về các hãng xe cụ thể không có trong bằng chứng cốt lõi (EV markets differ by region, China dominates). |
 
 Keyword coverage is a lightweight proxy, not a replacement for human grading.
-When LLM is disabled or unavailable, answers are extractive and therefore show retrieval quality rather than free-form LLM hallucination.
+LLM answers and LLM judge were generated with the configured API where calls succeeded; keyword coverage is kept as a lightweight retrieval proxy.
 
 ## Details
 

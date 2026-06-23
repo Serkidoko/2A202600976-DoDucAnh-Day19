@@ -1026,6 +1026,11 @@ def write_evaluation_report(
     if use_llm_judge:
         summary_header = "| # | Question | Flat keyword coverage | Graph keyword coverage | Note | LLM judge |"
         summary_separator = "|---|---|---:|---:|---|---|"
+    llm_note = (
+        "LLM answers and LLM judge are enabled when API calls succeed; otherwise the script falls back to extractive local answers."
+        if use_llm_judge
+        else "When LLM is disabled or unavailable, answers are extractive and therefore show retrieval quality rather than free-form LLM hallucination."
+    )
 
     report = "\n".join(
         [
@@ -1041,7 +1046,7 @@ def write_evaluation_report(
             *rows,
             "",
             "Keyword coverage is a lightweight proxy, not a replacement for human grading.",
-            "When LLM is disabled or unavailable, answers are extractive and therefore show retrieval quality rather than free-form LLM hallucination.",
+            llm_note,
             "",
             "## Details",
             "",
@@ -1153,6 +1158,161 @@ def draw_knowledge_graph(graph_rag: KnowledgeGraphRAG, output_path: Path, max_en
     plt.close()
 
 
+def parse_source_doc_ids(source_text: str) -> list[str]:
+    return re.findall(r"\bdoc_\d+\b", source_text or "")
+
+
+def parse_llm_winner(judge_text: str) -> str:
+    normalized = normalize_for_match(judge_text or "")
+    if "better graphrag" in normalized:
+        return "GraphRAG"
+    if "better flat rag" in normalized:
+        return "Flat RAG"
+    return "Tie"
+
+
+def parse_score(judge_text: str, label: str) -> int | None:
+    match = re.search(rf"{re.escape(label)}\s*:\s*(\d)\s*/\s*5", judge_text or "", flags=re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def draw_llm_benchmark_graph(csv_path: Path, output_path: Path, max_doc_nodes: int = 28) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    rows: list[dict[str, str]]
+    with csv_path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise ValueError(f"No benchmark rows found in {csv_path}")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    graph = nx.Graph()
+    doc_counts: dict[str, int] = {}
+
+    for row in rows:
+        for doc_id in parse_source_doc_ids(row.get("flat_sources", "")):
+            doc_counts[doc_id] = doc_counts.get(doc_id, 0) + 1
+        for doc_id in parse_source_doc_ids(row.get("graphrag_sources", "")):
+            doc_counts[doc_id] = doc_counts.get(doc_id, 0) + 1
+
+    top_docs = {
+        doc_id
+        for doc_id, _ in sorted(doc_counts.items(), key=lambda item: item[1], reverse=True)[:max_doc_nodes]
+    }
+
+    graph.add_node("Flat RAG", kind="system")
+    graph.add_node("GraphRAG", kind="system")
+    graph.add_node("LLM Judge", kind="judge")
+
+    for row in rows:
+        case_id = row["case"]
+        question_node = f"Q{case_id}"
+        winner = parse_llm_winner(row.get("llm_judge", ""))
+        flat_score = parse_score(row.get("llm_judge", ""), "Flat RAG")
+        graph_score = parse_score(row.get("llm_judge", ""), "GraphRAG")
+
+        graph.add_node(
+            question_node,
+            kind="question",
+            winner=winner,
+            label=f"Q{case_id}",
+            question=row.get("question", ""),
+        )
+        graph.add_edge("LLM Judge", question_node, relation=winner)
+        graph.add_edge("Flat RAG", question_node, relation="answered", score=flat_score or 0)
+        graph.add_edge("GraphRAG", question_node, relation="answered", score=graph_score or 0)
+
+        for doc_id in parse_source_doc_ids(row.get("flat_sources", "")):
+            if doc_id not in top_docs:
+                continue
+            graph.add_node(doc_id, kind="document")
+            graph.add_edge(question_node, doc_id, relation="flat_source")
+
+        for doc_id in parse_source_doc_ids(row.get("graphrag_sources", "")):
+            if doc_id not in top_docs:
+                continue
+            graph.add_node(doc_id, kind="document")
+            graph.add_edge(question_node, doc_id, relation="graph_source")
+
+        for entity in [item.strip() for item in row.get("graphrag_seed_entities", "").split(",") if item.strip()][:3]:
+            entity_node = f"entity::{entity}"
+            graph.add_node(entity_node, kind="entity", label=entity)
+            graph.add_edge(question_node, entity_node, relation="seed_entity")
+
+    plt.figure(figsize=(20, 13))
+    pos = nx.spring_layout(graph, seed=11, k=0.9, iterations=120)
+
+    question_nodes = [node for node, data in graph.nodes(data=True) if data.get("kind") == "question"]
+    doc_nodes = [node for node, data in graph.nodes(data=True) if data.get("kind") == "document"]
+    entity_nodes = [node for node, data in graph.nodes(data=True) if data.get("kind") == "entity"]
+    system_nodes = [node for node, data in graph.nodes(data=True) if data.get("kind") == "system"]
+    judge_nodes = [node for node, data in graph.nodes(data=True) if data.get("kind") == "judge"]
+
+    question_colors = []
+    for node in question_nodes:
+        winner = graph.nodes[node].get("winner")
+        if winner == "GraphRAG":
+            question_colors.append("#22c55e")
+        elif winner == "Flat RAG":
+            question_colors.append("#ef4444")
+        else:
+            question_colors.append("#f59e0b")
+
+    edge_colors = []
+    edge_widths = []
+    for _, _, data in graph.edges(data=True):
+        relation = data.get("relation")
+        if relation == "flat_source":
+            edge_colors.append("#ef4444")
+            edge_widths.append(0.8)
+        elif relation == "graph_source":
+            edge_colors.append("#22c55e")
+            edge_widths.append(0.8)
+        elif relation == "seed_entity":
+            edge_colors.append("#8b5cf6")
+            edge_widths.append(0.9)
+        elif relation in {"Flat RAG", "GraphRAG", "Tie"}:
+            edge_colors.append("#111827")
+            edge_widths.append(1.3)
+        else:
+            edge_colors.append("#94a3b8")
+            edge_widths.append(0.5)
+
+    nx.draw_networkx_edges(graph, pos, alpha=0.35, edge_color=edge_colors, width=edge_widths)
+    nx.draw_networkx_nodes(graph, pos, nodelist=doc_nodes, node_color="#93c5fd", node_size=260, alpha=0.85)
+    nx.draw_networkx_nodes(graph, pos, nodelist=entity_nodes, node_color="#a78bfa", node_size=480, alpha=0.9)
+    nx.draw_networkx_nodes(graph, pos, nodelist=question_nodes, node_color=question_colors, node_size=560, alpha=0.95)
+    nx.draw_networkx_nodes(graph, pos, nodelist=system_nodes, node_color="#0f172a", node_size=1200, alpha=0.95)
+    nx.draw_networkx_nodes(graph, pos, nodelist=judge_nodes, node_color="#facc15", node_size=1100, alpha=0.95)
+
+    labels = {}
+    for node, data in graph.nodes(data=True):
+        if data.get("kind") == "entity":
+            labels[node] = data.get("label", node)
+        else:
+            labels[node] = data.get("label", node)
+    nx.draw_networkx_labels(graph, pos, labels=labels, font_size=8, font_color="#111827")
+
+    legend = [
+        Line2D([0], [0], marker="o", color="w", label="Question: GraphRAG wins", markerfacecolor="#22c55e", markersize=10),
+        Line2D([0], [0], marker="o", color="w", label="Question: Flat RAG wins", markerfacecolor="#ef4444", markersize=10),
+        Line2D([0], [0], marker="o", color="w", label="Question: Tie", markerfacecolor="#f59e0b", markersize=10),
+        Line2D([0], [0], marker="o", color="w", label="Retrieved document", markerfacecolor="#93c5fd", markersize=10),
+        Line2D([0], [0], marker="o", color="w", label="GraphRAG seed entity", markerfacecolor="#a78bfa", markersize=10),
+        Line2D([0], [0], marker="o", color="w", label="LLM judge", markerfacecolor="#facc15", markersize=10),
+    ]
+    plt.legend(handles=legend, loc="lower left", fontsize=10)
+    plt.title("LLM Benchmark Graph: Questions, Retrieved Evidence, GraphRAG Seeds, and Judge Outcomes", fontsize=18)
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=180)
+    plt.close()
+
+
 def write_cost_analysis(
     docs: list[Document],
     chunks: list[TextChunk],
@@ -1255,7 +1415,7 @@ def main() -> None:
         graph_path = REPORT_DIR / "knowledge_graph.png"
         cost_path = REPORT_DIR / "cost_analysis.md"
         write_evaluation_report(flat_rag, graph_rag, benchmark_path, use_llm_judge=args.llm_judge, csv_path=csv_path)
-        draw_knowledge_graph(graph_rag, graph_path)
+        draw_llm_benchmark_graph(csv_path, graph_path)
         write_cost_analysis(docs, chunks, graph_rag, metrics, cost_path)
         print(f"Wrote benchmark report: {benchmark_path}")
         print(f"Wrote benchmark CSV: {csv_path}")
@@ -1271,7 +1431,11 @@ def main() -> None:
 
     if args.graph_image:
         graph_path = REPORT_DIR / "knowledge_graph.png"
-        draw_knowledge_graph(graph_rag, graph_path)
+        csv_path = REPORT_DIR / "benchmark_20.csv"
+        if csv_path.exists():
+            draw_llm_benchmark_graph(csv_path, graph_path)
+        else:
+            draw_knowledge_graph(graph_rag, graph_path)
         print(f"Wrote graph image: {graph_path}")
 
     if args.cost_analysis:
